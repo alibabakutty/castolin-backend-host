@@ -1,6 +1,6 @@
-code .gitignore
-
 
 node_modules/
 .env
-serviceKey.json
+
+config/serviceKey.json
+config/serviceAccountKey.json

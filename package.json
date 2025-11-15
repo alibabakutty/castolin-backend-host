@@ -2,9 +2,11 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "firebase-admin.js",
+  "main": "firebase-connector.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node firebase-connector.js",
+    "dev": "node firebase-connector.js"
   },
   "keywords": [],
   "author": "",

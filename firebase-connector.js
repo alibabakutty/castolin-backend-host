@@ -5,27 +5,91 @@ import admin from 'firebase-admin';
 import serviceAccount from "./config/serviceAccountKey.json" with { type: "json" }; 
 
 const app = express(); 
-app.use(cors());
+// app.use(cors());
+
+// ✅ PROPER CORS CONFIGURATION FOR RAILWAY
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'https://castolin-frontend-production.up.railway.app', // Your frontend Railway URL
+      'http://localhost:5173', // Vite dev server
+      'http://localhost:3000', // React dev server
+      process.env.CLIENT_URL, // From environment variable
+      // Add more origins as needed
+    ].filter(Boolean); // Remove any undefined values
+
+    // Check if the origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
+  ],
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
+
 app.use(express.json());
+
+// ✅ DATABASE CONFIGURATION FOR RAILWAY
+const dbConfig = {
+  host: process.env.MYSQLHOST || "localhost",
+  user: process.env.MYSQLUSER || "root",
+  password: process.env.MYSQLPASSWORD || "Rup@@.123$",
+  database: process.env.MYSQLDATABASE || "order_management",
+  port: process.env.MYSQLPORT || 3306,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+};
+
+const db = mysql.createPool(dbConfig);
+
+// Test database connection
+db.getConnection((err, connection) => {
+  if (err) {
+    console.error("❌ Database connection failed:", err);
+  } else {
+    console.log("✅ Connected to MySQL Database");
+    connection.release();
+  }
+});
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-const db = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "Rup@@.123$",
-  database: "order_management",
-});
+// const db = mysql.createConnection({
+//   host: "localhost",
+//   user: "root",
+//   password: "Rup@@.123$",
+//   database: "order_management",
+// });
 
-db.connect((err) => {
-  if (err) {
-    console.error("❌ Database connection failed:", err);
-  } else {
-    console.log("✅ Connected to MySQL Database");
-  }
-});
+// db.connect((err) => {
+//   if (err) {
+//     console.error("❌ Database connection failed:", err);
+//   } else {
+//     console.log("✅ Connected to MySQL Database");
+//   }
+// });
 
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -40,6 +104,40 @@ const verifyToken = async (req, res, next) => {
     res.status(401).json({ error: "Invalid token" });
   }
 };
+
+// ✅ HEALTH CHECK ENDPOINT (IMPORTANT FOR RAILWAY)
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'Backend is running successfully',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    cors: {
+      allowedOrigins: corsOptions.origin.toString()
+    }
+  });
+});
+
+// ✅ DATABASE HEALTH CHECK
+app.get("/api/health/db", (req, res) => {
+  db.query('SELECT 1 as test', (err, results) => {
+    if (err) {
+      console.error('Database health check failed:', err);
+      return res.status(500).json({
+        status: 'ERROR',
+        database: 'Connection failed',
+        error: err.message
+      });
+    }
+    
+    res.json({
+      status: 'OK',
+      database: 'Connected successfully',
+      test: results[0].test
+    });
+  });
+});
+
 
 app.get("/me-admin", verifyToken, async (req, res) => {
   
@@ -841,6 +939,16 @@ app.put("/orders-by-number/:order_no", async (req, res) => {
   }
 });
 
-app.listen(5000, () => {
-  console.log("Backend running on http://localhost:5000");
+// app.listen(5000, () => {
+//   console.log("Backend running on http://localhost:5000");
+// });
+
+
+// ✅ USE PORT FROM ENVIRONMENT VARIABLE (RAILWAY PROVIDES THIS)
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
 });
