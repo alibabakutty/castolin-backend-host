@@ -857,86 +857,110 @@ app.put("/orders-by-number/:order_no", async (req, res) => {
     });
   }
 
-  // ✅ Proceed with transaction safely using async/await
-  try {
-    await new Promise((resolve, reject) => {
-      db.beginTransaction((err) => (err ? reject(err) : resolve()));
-    });
-
-    const allowedFields = [
-      "status",
-      "disc_percentage",
-      "disc_amount",
-      "spl_disc_percentage",
-      "spl_disc_amount",
-      "net_rate",
-      "gross_amount",
-      "total_quantity",
-      "total_amount",
-      "remarks",
-      "quantity"
-    ];
-
-    for (const [index, update] of updates.entries()) {
-      const { id, ...fields } = update;
-
-      // Filter only allowed fields
-      const filteredFields = {};
-      for (const key of Object.keys(fields)) {
-        if (allowedFields.includes(key)) {
-          filteredFields[key] = fields[key];
-        }
-      }
-
-      if (Object.keys(filteredFields).length === 0) {
-        console.warn(`Skipping update ${index}: No valid fields`);
-        continue;
-      }
-
-      // Build SQL dynamically but safely
-      const setClause = Object.keys(filteredFields)
-        .map((field) => `\`${field}\` = ?`)
-        .join(", ");
-
-      const values = Object.values(filteredFields);
-
-      // ✅ Update only by ID (order_no not used in WHERE)
-      const sql = `UPDATE orders SET ${setClause} WHERE id = ?`;
-      const params = [...values, id];
-
-      console.log(`Executing update ${index}:`, sql, params);
-
-      await new Promise((resolve, reject) => {
-        db.query(sql, params, (err, result) => {
-          if (err) {
-            console.error(`Database error in update ${index}:`, err);
-            return reject(err);
-          }
-          if (result.affectedRows === 0) {
-            return reject(new Error(`No record found for id ${id}`));
-          }
-          resolve();
-        });
-      });
+  // ✅ Get a connection from the pool for transaction
+  db.getConnection((err, connection) => {
+    if (err) {
+      console.error("Failed to get database connection:", err);
+      return res.status(500).json({ error: "Database connection failed" });
     }
 
-    // ✅ Commit transaction
-    await new Promise((resolve, reject) => {
-      db.commit((err) => (err ? reject(err) : resolve()));
-    });
+    // ✅ Proceed with transaction using the connection
+    connection.beginTransaction(async (transactionErr) => {
+      if (transactionErr) {
+        connection.release();
+        console.error("Transaction begin failed:", transactionErr);
+        return res.status(500).json({ error: "Failed to start transaction" });
+      }
 
-    res.json({
-      message: "Orders updated successfully",
-      updatedCount: updates.length,
+      try {
+        const allowedFields = [
+          "status",
+          "disc_percentage",
+          "disc_amount",
+          "spl_disc_percentage",
+          "spl_disc_amount",
+          "net_rate",
+          "gross_amount",
+          "total_quantity",
+          "total_amount",
+          "remarks",
+          "quantity"
+        ];
+
+        for (const [index, update] of updates.entries()) {
+          const { id, ...fields } = update;
+
+          // Filter only allowed fields
+          const filteredFields = {};
+          for (const key of Object.keys(fields)) {
+            if (allowedFields.includes(key)) {
+              filteredFields[key] = fields[key];
+            }
+          }
+
+          if (Object.keys(filteredFields).length === 0) {
+            console.warn(`Skipping update ${index}: No valid fields`);
+            continue;
+          }
+
+          // Build SQL dynamically but safely
+          const setClause = Object.keys(filteredFields)
+            .map((field) => `\`${field}\` = ?`)
+            .join(", ");
+
+          const values = Object.values(filteredFields);
+
+          // ✅ Update only by ID (order_no not used in WHERE)
+          const sql = `UPDATE orders SET ${setClause} WHERE id = ?`;
+          const params = [...values, id];
+
+          console.log(`Executing update ${index}:`, sql, params);
+
+          await new Promise((resolve, reject) => {
+            connection.query(sql, params, (err, result) => {
+              if (err) {
+                console.error(`Database error in update ${index}:`, err);
+                return reject(err);
+              }
+              if (result.affectedRows === 0) {
+                return reject(new Error(`No record found for id ${id}`));
+              }
+              resolve();
+            });
+          });
+        }
+
+        // ✅ Commit transaction
+        await new Promise((resolve, reject) => {
+          connection.commit((err) => {
+            if (err) {
+              return reject(err);
+            }
+            resolve();
+          });
+        });
+
+        connection.release(); // Release connection back to pool
+
+        res.json({
+          message: "Orders updated successfully",
+          updatedCount: updates.length,
+        });
+
+      } catch (err) {
+        console.error("Transaction failed:", err.message);
+        
+        // ✅ Rollback transaction
+        connection.rollback(() => {
+          connection.release(); // Release connection even on error
+          res.status(400).json({
+            error: "Update failed",
+            details: err.message,
+          });
+        });
+      }
     });
-  } catch (err) {
-    console.error("Transaction failed:", err.message);
-    await new Promise((resolve) => db.rollback(() => resolve()));
-    res.status(400).json({
-      error: "Update failed",
-      details: err.message,
-    });
-  }
+  });
 });
 
 // app.listen(5000, () => {

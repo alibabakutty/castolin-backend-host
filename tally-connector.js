@@ -700,19 +700,29 @@ async function pullItemsFromTally() {
   }
 
 
-// SIMPLIFIED FUNCTION TO SAVE CUSTOMERS TO MYSQL
+// SIMPLIFIED FUNCTION TO SAVE CUSTOMERS TO MYSQL - SKIP EMPTY CUSTOMER_CODE
 async function saveCustomersToMySQL(customers) {
   if (customers.length === 0) {
     console.log('ℹ️ No customers to save');
     return;
   }
+
+  // Filter out customers with empty or null customer_code
+  const validCustomers = customers.filter(customer => customer.customer_code && customer.customer_code.trim() !== '');
   
-  console.log(`💾 Saving ${customers.length} customers to MySQL...`);
+  console.log(`📊 Filtered customers: ${validCustomers.length} valid customers (${customers.length - validCustomers.length} skipped due to empty customer_code)`);
+  
+  if (validCustomers.length === 0) {
+    console.log('ℹ️ No valid customers to save (all customers have empty customer_code)');
+    return;
+  }
+  
+  console.log(`💾 Saving ${validCustomers.length} customers to MySQL...`);
   
   let savedCount = 0;
   let errorCount = 0;
   
-  for (const customer of customers) {
+  for (const customer of validCustomers) {
     try {
       // SIMPLE INSERT - IGNORE DUPLICATES
       const insertSql = `
@@ -734,10 +744,10 @@ async function saveCustomersToMySQL(customers) {
             errorCount++;
           } else {
             if (result.affectedRows > 0) {
-              console.log(`✅ Added: ${customer.customer_name}`);
+              console.log(`✅ Added: ${customer.customer_name} (Code: ${customer.customer_code})`);
               savedCount++;
             } else {
-              console.log(`⏭️ Skipped duplicate: ${customer.customer_name}`);
+              console.log(`⏭️ Skipped duplicate: ${customer.customer_name} (Code: ${customer.customer_code})`);
             }
           }
           resolve();
@@ -751,21 +761,40 @@ async function saveCustomersToMySQL(customers) {
   }
   
   console.log(`✅ MySQL: ${savedCount} new customers added, ${errorCount} errors`);
+  
+  // Log summary of skipped customers
+  const skippedCustomers = customers.filter(customer => !customer.customer_code || customer.customer_code.trim() === '');
+  if (skippedCustomers.length > 0) {
+    console.log(`⏭️ Skipped ${skippedCustomers.length} customers with empty customer_code:`);
+    skippedCustomers.forEach(customer => {
+      console.log(`   - ${customer.customer_name}`);
+    });
+  }
 }
 
-// 🧩 SAVE ITEMS TO MYSQL
+// 🧩 SAVE ITEMS TO MYSQL - SKIP ITEMS WITH EMPTY/NULL ITEM_CODE
 async function saveItemsToMySQL(items) {
   if (items.length === 0) {
     console.log('ℹ️ No stock items to save');
     return;
   }
 
-  console.log(`💾 Saving ${items.length} items to MySQL...`);
+  // Filter out items with empty or null item_code
+  const validItems = items.filter(item => item.item_code && item.item_code.trim() !== '');
+  
+  console.log(`📊 Filtered items: ${validItems.length} valid items (${items.length - validItems.length} skipped due to empty item_code)`);
+  
+  if (validItems.length === 0) {
+    console.log('ℹ️ No valid items to save (all items have empty item_code)');
+    return;
+  }
+
+  console.log(`💾 Saving ${validItems.length} items to MySQL...`);
 
   let savedCount = 0;
   let errorCount = 0;
 
-  for (const item of items) {
+  for (const item of validItems) {
     try {
       const insertSql = `
         INSERT IGNORE INTO stock_item 
@@ -794,10 +823,10 @@ async function saveItemsToMySQL(items) {
               errorCount++;
             } else {
               if (result.affectedRows > 0) {
-                console.log(`✅ Added: ${item.stock_item_name} (Rate: ${item.rate || 'N/A'})`);
+                console.log(`✅ Added: ${item.stock_item_name} (Code: ${item.item_code}, Rate: ${item.rate || 'N/A'})`);
                 savedCount++;
               } else {
-                console.log(`⏭️ Skipped duplicate: ${item.stock_item_name}`);
+                console.log(`⏭️ Skipped duplicate: ${item.stock_item_name} (Code: ${item.item_code})`);
               }
             }
             resolve();
@@ -814,6 +843,15 @@ async function saveItemsToMySQL(items) {
   }
 
   console.log(`✅ MySQL: ${savedCount} new items added, ${errorCount} errors`);
+  
+  // Log summary of skipped items
+  const skippedItems = items.filter(item => !item.item_code || item.item_code.trim() === '');
+  if (skippedItems.length > 0) {
+    console.log(`⏭️ Skipped ${skippedItems.length} items with empty item_code:`);
+    skippedItems.forEach(item => {
+      console.log(`   - ${item.stock_item_name}`);
+    });
+  }
 }
 
 // Main execution
