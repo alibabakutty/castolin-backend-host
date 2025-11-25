@@ -153,7 +153,7 @@ app.get("/me-admin", verifyToken, async (req, res) => {
 
 app.get("/me-distributor", verifyToken, async (req, res) => {
   db.query(
-    "SELECT username, role FROM distributors WHERE firebase_uid = ?",
+    "SELECT usercode, username, role FROM distributors WHERE firebase_uid = ?",
     [req.uid],
     (err, rows) => {
       if (err) return res.status(500).json({errror: err.message})
@@ -290,12 +290,12 @@ app.post("/signup-distributor", verifyToken, async (req, res) => {
 
       // Insert new distributor into distributors table
       const insertSql = `
-        INSERT INTO distributors (username, email, firebase_uid, role, mobile_number)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO distributors (usercode, username, email, firebase_uid, role, mobile_number)
+        VALUES (?, ?, ?, ?, ?, ?)
       `;
       const role = "distributor";
 
-      db.query(insertSql, [username, email, firebaseUid, role, mobile_number], (err, result) => {
+      db.query(insertSql, [usercode, username, email, firebaseUid, role, mobile_number], (err, result) => {
         if (err) {
           console.error("Database insert error:", err);
           return res.status(500).json({ 
@@ -450,7 +450,7 @@ app.post("/login-distributor", verifyToken, async (req, res) => {
 
   try {
     db.query(
-      "SELECT id, username, mobile_number, email, role, firebase_uid FROM distributors WHERE firebase_uid = ?",
+      "SELECT id, usercode, username, mobile_number, email, role, firebase_uid FROM distributors WHERE firebase_uid = ?",
       [firebaseUid],
       (err, rows) => {
         if (err) {
@@ -764,7 +764,7 @@ app.post('/orders', (req, res) => {
 
   const sql = `
     INSERT INTO orders 
-    (voucher_type, order_no, order_date, status, customer_code, executive, role, customer_name, item_code, item_name, hsn, gst, quantity, uom, rate, amount, net_rate, gross_amount, disc_percentage, disc_amount, spl_disc_percentage, spl_disc_amount, total_quantity, total_amount, remarks) 
+    (voucher_type, order_no, order_date, status, customer_code, executive, role, customer_name, item_code, item_name, hsn, gst, delivery_date, delivery_mode, transporter_name, quantity, uom, rate, amount, net_rate, gross_amount, disc_percentage, disc_amount, spl_disc_percentage, spl_disc_amount, total_quantity, total_amount, remarks) 
     VALUES ?
   `;
 
@@ -781,6 +781,9 @@ app.post('/orders', (req, res) => {
     item.item_name,
     item.hsn,
     String(item.gst).replace(/\s*%/, ''),
+    item.delivery_date,
+    item.delivery_mode,
+    item.transporter_name,
     item.quantity,
     item.uom,
     item.rate,
@@ -884,7 +887,10 @@ app.put("/orders-by-number/:order_no", async (req, res) => {
           "total_quantity",
           "total_amount",
           "remarks",
-          "quantity"
+          "quantity",
+          "delivery_date",
+          "delivery_mode",
+          "transporter_name"
         ];
 
         for (const [index, update] of updates.entries()) {
