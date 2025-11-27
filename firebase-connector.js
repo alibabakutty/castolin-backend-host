@@ -76,21 +76,6 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-// const db = mysql.createConnection({
-//   host: "localhost",
-//   user: "root",
-//   password: "Rup@@.123$",
-//   database: "order_management",
-// });
-
-// db.connect((err) => {
-//   if (err) {
-//     console.error("❌ Database connection failed:", err);
-//   } else {
-//     console.log("✅ Connected to MySQL Database");
-//   }
-// });
-
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token provided" });
@@ -153,7 +138,7 @@ app.get("/me-admin", verifyToken, async (req, res) => {
 
 app.get("/me-distributor", verifyToken, async (req, res) => {
   db.query(
-    "SELECT usercode, username, role FROM distributors WHERE firebase_uid = ?",
+    "SELECT customer_code, customer_name, role FROM customer WHERE firebase_uid = ?",
     [req.uid],
     (err, rows) => {
       if (err) return res.status(500).json({errror: err.message})
@@ -163,12 +148,118 @@ app.get("/me-distributor", verifyToken, async (req, res) => {
 
 app.get("/me-corporate", verifyToken, async (req, res) => {
   db.query(
-    "SELECT username, role FROM corporates WHERE firebase_uid = ?",
+    "SELECT customer_code, customer_name, role FROM customer WHERE firebase_uid = ?",
     [req.uid],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message })
         res.json(rows);
     },);
+});
+
+app.put("/distributors/:customer_code", async (req, res) => {
+  const customerCode = req.params.customer_code; // Corrected parameter name
+  const updates = req.body;
+
+  // Validate that we have data to update
+  if (!updates || Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: "No update data provided" });
+  }
+
+  // List of allowed fields that can be updated
+  const allowedFields = ['customer_name', 'mobile_number', 'email', 'customer_type', 'password', 'role', 'firebase_uid'];
+  
+  // Filter out any fields that are not in the allowed list
+  const filteredUpdates = {};
+  Object.keys(updates).forEach(key => {
+    if (allowedFields.includes(key)) {
+      filteredUpdates[key] = updates[key];
+    }
+  });
+
+  // Check if we have any valid fields left after filtering
+  if (Object.keys(filteredUpdates).length === 0) {
+    return res.status(400).json({ error: "No valid fields to update" });
+  }
+
+  // Build the SET clause for SQL dynamically
+  const setClause = Object.keys(filteredUpdates)
+    .map(key => `${key} = ?`)
+    .join(', ');
+
+  const values = Object.values(filteredUpdates);
+  values.push(customerCode); // Use customerCode for WHERE clause
+
+  // Fixed SQL query - using customer_code instead of usercode
+  const sql = `UPDATE customer SET ${setClause} WHERE customer_code = ?`;
+
+  db.query(sql, values, (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: err.message });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Distributor not found" });
+    }
+
+    res.json({ 
+      message: "Distributor updated successfully", 
+      affectedRows: result.affectedRows 
+    });
+  });
+});
+
+app.put("/corporates/:customer_code", async (req, res) => {
+  const customerCode = req.params.customer_code; // Corrected parameter name
+  const updates = req.body;
+
+  // Validate that we have data to update
+  if (!updates || Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: "No update data provided" });
+  }
+
+  // List of allowed fields that can be updated
+  const allowedFields = ['customer_name', 'mobile_number', 'email', 'customer_type', 'password', 'role', 'firebase_uid'];
+  
+  // Filter out any fields that are not in the allowed list
+  const filteredUpdates = {};
+  Object.keys(updates).forEach(key => {
+    if (allowedFields.includes(key)) {
+      filteredUpdates[key] = updates[key];
+    }
+  });
+
+  // Check if we have any valid fields left after filtering
+  if (Object.keys(filteredUpdates).length === 0) {
+    return res.status(400).json({ error: "No valid fields to update" });
+  }
+
+  // Build the SET clause for SQL dynamically
+  const setClause = Object.keys(filteredUpdates)
+    .map(key => `${key} = ?`)
+    .join(', ');
+
+  const values = Object.values(filteredUpdates);
+  values.push(customerCode); // Use customerCode for WHERE clause
+
+  // Fixed SQL query - using customer_code instead of usercode
+  const sql = `UPDATE customer SET ${setClause} WHERE customer_code = ?`;
+
+  db.query(sql, values, (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ error: err.message });
+    }
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Direct Order not found" });
+    }
+
+    res.json({ 
+      message: "Direct Order updated successfully", 
+      affectedRows: result.affectedRows 
+    });
+  });
 });
 
 // Admin signup (only for admins table)
@@ -243,166 +334,6 @@ app.post("/signup-admin", verifyToken, async (req, res) => {
   }
 });
 
-// User signup (only for distributors table)
-app.post("/signup-distributor", verifyToken, async (req, res) => {
-  const { username, email, mobile_number } = req.body;
-  const firebaseUid = req.uid; // Get UID from verified token
-
-  console.log("Distributor signup request:", { username, email, firebaseUid });
-
-  if (!username || !email) {
-    return res.status(400).json({ 
-      success: false,
-      error: "Username and email are required" 
-    });
-  }
-
-  // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ 
-      success: false,
-      error: "Invalid email format" 
-    });
-  }
-
-  try {
-    // Check if user already exists in users table
-    const checkSql = "SELECT * FROM distributors WHERE firebase_uid = ? OR email = ?";
-    db.query(checkSql, [firebaseUid, email], async (err, rows) => {
-      if (err) {
-        console.error("Database check error:", err);
-        return res.status(500).json({ 
-          success: false,
-          error: "Database error" 
-        });
-      }
-
-      if (rows.length > 0) {
-        const existingDistributor = rows[0];
-        return res.status(200).json({ 
-          success: true,
-          message: "Distributor already exists", 
-          role: existingDistributor.role,
-          userType: 'distributor'
-        });
-      }
-
-      // Insert new distributor into distributors table
-      const insertSql = `
-        INSERT INTO distributors (usercode, username, email, firebase_uid, role, mobile_number)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `;
-      const role = "distributor";
-
-      db.query(insertSql, [usercode, username, email, firebaseUid, role, mobile_number], (err, result) => {
-        if (err) {
-          console.error("Database insert error:", err);
-          return res.status(500).json({ 
-            success: false,
-            error: "Failed to create distributor account" 
-          });
-        }
-        
-        console.log("New distributor added to MySQL, ID:", result.insertId);
-        res.status(201).json({ 
-          success: true,
-          message: "Distributor signup successful", 
-          role: role,
-          userType: 'distributor',
-          userId: result.insertId
-        });
-      });
-    });
-  } catch (error) {
-    console.error("Signup error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: "Internal server error" 
-    });
-  }
-});
-
-// Corporate signup
-  app.post("/signup-corporate", verifyToken, async (req, res) => {
-    const { username, email, mobile_number } = req.body;
-    const firebaseUid = req.uid;  // Get id from verified token
-
-    console.log("Corporate signup request:", { username, email, firebaseUid });
-
-    if (!username || !email) {
-      return res.status(400).json({
-        success: false,
-        error: "Username and email are required"
-      });
-    }
-
-    // validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid email format"
-      });
-    }
-
-    try {
-      // check if user already exists in corporates table
-      const checkSql = "SELECT * FROM corporates WHERE firebase_uid = ? OR email = ?";
-      db.query(checkSql, [firebaseUid, email], async (err, rows) => {
-        if (err) {
-          console.error("Database check error:", err);
-          return res.status(500).json({
-            success: false,
-            error: "Database error"
-          });
-        }
-
-        if (rows.length > 0) {
-          const existingCorporate = rows[0];
-          return res.status(200).json({
-            success: true,
-            message: "Corporate already exists",
-            role: existingCorporate.role,
-            userType: 'corporate'
-          });
-        }
-
-        // Insert new corporate into corporates table
-        const insertSql = `
-          INSERT INTO corporates (username, email, firebase_uid, role, mobile_number)
-          VALUES (?, ?, ?, ?, ?)
-        `;
-        const role = "corporate";
-
-        db.query(insertSql, [username, email, firebaseUid, role, mobile_number], (err, result) => {
-          if (err) {
-            console.error("Database insert error:", err);
-            return res.status(500).json({
-              success: false,
-              error: "Failed to create corporate account"
-            });
-          }
-
-          console.log("New Corporate added to MySQL, ID:", result.insertId);
-          res.status(201).json({
-            success: true,
-            message: "Corporate signup successful",
-            role: role,
-            userType: 'corporate',
-            userId: result.insertId,
-          })
-        })
-      });
-    } catch (error) {
-      console.error("Signup Error:", error);
-      res.status(500).json({
-        success: false,
-        error: "Internal server error"
-      })
-    }
-  });
-
 // Admin login (checks only admins table)
 app.post("/login-admin", verifyToken, async (req, res) => {
   const firebaseUid = req.uid;
@@ -444,128 +375,46 @@ app.post("/login-admin", verifyToken, async (req, res) => {
   }
 });
 
-// Distributor login (checks only distributors table)
-app.post("/login-distributor", verifyToken, async (req, res) => {
-  const firebaseUid = req.uid;
+// Get specific distributor by usercode
+app.get("/distributors/:customer_code", (req, res) => {
+  const { customer_code } = req.params;
 
-  try {
-    db.query(
-      "SELECT id, usercode, username, mobile_number, email, role, firebase_uid FROM distributors WHERE firebase_uid = ?",
-      [firebaseUid],
-      (err, rows) => {
-        if (err) {
-          return res.status(500).json({ 
-            success: false,
-            error: "Database error" 
-          });
-        }
-
-        if (rows.length === 0) {
-          return res.status(404).json({ 
-            success: false,
-            error: "Distributor not found. Please sign up first." 
-          });
-        }
-
-        const user = rows[0];
-        res.json({
-          success: true,
-          message: "Distributor login successful",
-          user: user,
-          userType: 'distributor'
-        });
-      }
-    );
-  } catch (error) {
-    console.error("Distributor login error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: "Internal server error" 
-    });
-  }
-});
-
-// Corporate Login (checks only corporates table)
-app.post("/login-corporate", verifyToken, async (req, res) => {
-  const firebaseUid = req.uid;
-
-  try {
-    db.query(
-      "SELECT id, username, mobile_number, email, role, firebase_uid FROM  corporates WHERE firebase_uid = ?",
-      [firebaseUid],
-      (err, rows) => {
-        if (err) {
-          return res.status(500).json({
-            success: false,
-            error: "Database error"
-          });
-        }
-
-        if (rows.length === 0) {
-          return res.status(404).json({
-            success: false,
-            error: "Corporate not found. Please signup first."
-          })
-        }
-
-        const user = rows[0];
-        res.json({
-          success: true,
-          message: "Corporate login successful",
-          user: user,
-          userType: 'corporate'
-        });
-      }
-    )
-  } catch (error) {
-    console.error("Corporate login error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Internal server error"
-    })
-  }
-});
-
-// Get specific executive by id
-app.get("/distributors/:id", (req, res) => {
-  const userId = req.params.id;
-
-  // check if ID is valid
-  if (!userId) {
-    return res.status(400).json({ error: "Distributor ID is required" });
+  // check if usercode is valid
+  if (!customer_code) {
+    return res.status(400).json({ error: "Distributor usercode is required" });
   }
 
   // Use parameterized query to prevent SQL injection
-  const sql = "SELECT * FROM distributors WHERE id = ?";
+  const sql = "SELECT * FROM customer WHERE customer_code = ?";
 
-  db.query(sql, [userId], (err, results) => {
+  db.query(sql, [customer_code], (err, results) => {
     if (err) {
       console.error("Database query error:", err);
       return res.status(500).json({ error: "Internal server error" });
     }
 
     if (results.length === 0) {
-      return res.status(400).json({ error: "Distributor not found" });
+      return res.status(404).json({ error: "Distributor not found" });
     }
 
     // Return the single item object
     res.json(results[0]);
-  })
+  });
 });
 
 // Get specific corporate by id
-app.get("/corporates/:id", (req, res) => {
-  const userId = req.params.id;
+app.get("/corporates/:customer_code", (req, res) => {
+  const { customer_code } = req.params;
 
   // check if ID is valid
-  if (!userId) {
-    return res.status(400).json({ error: "Corporate ID is required!"});
+  if (!customer_code) {
+    return res.status(400).json({ error: "Customer Code is required!"});
   }
 
   // use parameterized query to prevent SQL injection
-  const sql = "SELECT * FROM corporates WHERE id = ?";
+  const sql = "SELECT * FROM customer WHERE customer_code = ?";
 
-  db.query(sql, [userId], (err, results) => {
+  db.query(sql, [customer_code], (err, results) => {
     if (err) {
       console.error("Database query error:", err);
       return res.status(500).json({
@@ -575,7 +424,7 @@ app.get("/corporates/:id", (req, res) => {
 
     if (results.length === 0) {
       return res.status(400).json({
-        error: "Corporate not found"
+        error: "Direct Order not found"
       });
     }
     // return the single item object
@@ -605,14 +454,14 @@ app.get("/admins", (req, res) => {
 });
 
 app.get("/distributors", (req, res) => {
-  db.query("SELECT * FROM distributors", (err, results) => {
+  db.query(`SELECT * FROM customer WHERE customer_type = "distributor"`, (err, results) => {
     if (err) return res.status(500).json({ error: err });
     res.json(results);
   })
 });
 
 app.get("/corporates", (req, res) => {
-  db.query("SELECT * FROM corporates", (err, results) => {
+  db.query(`SELECT * FROM customer WHERE customer_type = "direct" `, (err, results) => {
     if (err) return res.status(500).json({ error: err });
     res.json(results);
   })
@@ -968,10 +817,6 @@ app.put("/orders-by-number/:order_no", async (req, res) => {
     });
   });
 });
-
-// app.listen(5000, () => {
-//   console.log("Backend running on http://localhost:5000");
-// });
 
 
 // ✅ USE PORT FROM ENVIRONMENT VARIABLE (RAILWAY PROVIDES THIS)

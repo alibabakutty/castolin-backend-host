@@ -94,6 +94,42 @@ const getItemXmlRequest = () => {
   </ENVELOPE>`;
 };
 
+// ✅ ENHANCED MOBILE NUMBER PARSER FUNCTION
+function extractMobileNumber(mobileRaw) {
+  if (!mobileRaw || mobileRaw === '-' || mobileRaw === 'NA' || mobileRaw === 'N/A') {
+    return null;
+  }
+
+  console.log(`🔍 Processing mobile: "${mobileRaw}"`);
+  
+  // Extract all digits
+  const digitsOnly = mobileRaw.replace(/\D/g, '');
+  
+  // Handle different scenarios
+  let extracted = '';
+  
+  if (digitsOnly.length === 10) {
+    extracted = digitsOnly;
+  } else if (digitsOnly.length === 11 && digitsOnly.startsWith('0')) {
+    // Remove leading 0 (like 09123456789)
+    extracted = digitsOnly.slice(1);
+  } else if (digitsOnly.length === 12 && digitsOnly.startsWith('91')) {
+    // Remove country code 91
+    extracted = digitsOnly.slice(2);
+  } else if (digitsOnly.length > 10) {
+    // Take last 10 digits for longer numbers
+    extracted = digitsOnly.slice(-10);
+  }
+  
+  // Final validation
+  if (extracted && extracted.length === 10 && /^\d+$/.test(extracted)) {
+    console.log(`✅ Mobile extracted successfully: ${extracted}`);
+    return extracted;
+  }
+  
+  console.log(`❌ Could not extract valid mobile from: "${mobileRaw}"`);
+  return null;
+}
 
 // SIMPLIFIED PARSER THAT WILL WORK WITH YOUR XML
 async function parseTallyCustomers(xmlData) {
@@ -115,7 +151,6 @@ async function parseTallyCustomers(xmlData) {
 
     console.log('📊 XML parsed successfully');
 
-    // DIRECT PATH TO LEDGERS BASED ON YOUR XML STRUCTURE
     let ledgers = [];
 
     if (parsed.ENVELOPE && 
@@ -152,9 +187,9 @@ async function parseTallyCustomers(xmlData) {
         let customerCode = '';
 
         if (Array.isArray(ledger.NAME)) {
-          customerName = String(ledger.NAME[0]).trim(); // first NAME = display name
+          customerName = String(ledger.NAME[0]).trim();
           if (ledger.NAME.length > 1) {
-            customerCode = String(ledger.NAME[1]).trim(); // second NAME = code
+            customerCode = String(ledger.NAME[1]).trim();
           }
         } else if (typeof ledger.NAME === 'string') {
           customerName = String(ledger.NAME).trim();
@@ -165,25 +200,22 @@ async function parseTallyCustomers(xmlData) {
           continue;
         }
 
-        // 2️⃣ Skip system accounts (Cash, Bank, etc.)
+        // 2️⃣ Skip system accounts
         if (shouldSkipLedger(customerName)) {
           console.log(`⏭️ Skipping system account: ${customerName}`);
           continue;
         }
 
-        // 3️⃣ Get parent group and determine if it's a customer
+        // 3️⃣ ONLY ACCEPT "Sundry Debtors" parent group
         const parent = ledger.PARENT || '';
-        const isCustomer =
-          parent.toLowerCase().includes('debtor') ||
-          parent.toLowerCase().includes('sundry') ||
-          parent.toLowerCase().includes('customer');
+        const isSundryDebtor = parent.toLowerCase() === 'sundry debtors';
 
-        if (!isCustomer) {
-          console.log(`⏭️ Skipping non-customer: ${customerName} (Parent: ${parent})`);
+        if (!isSundryDebtor) {
+          console.log(`⏭️ Skipping non-Sundry Debtors customer: ${customerName} (Parent: ${parent})`);
           continue;
         }
 
-        // 4️⃣ Extract mobile number (take from <LEDGERMOBILE>)
+        // 4️⃣ Extract mobile number
         let mobileNumber = null;
         if (ledger.LEDGERMOBILE) {
           let mobileRaw = '';
@@ -194,14 +226,10 @@ async function parseTallyCustomers(xmlData) {
             mobileRaw = String(ledger.LEDGERMOBILE).trim();
           }
 
-          // Find the first 10-digit number
-          const match = mobileRaw.match(/\b\d{10}\b/);
-          if (match) {
-            mobileNumber = match[0];
-          }
+          mobileNumber = extractMobileNumber(mobileRaw);
         }
 
-        // 5️⃣ Extract email (take from <EMAIL>)
+        // 5️⃣ Extract email
         let email = null;
         if (ledger.EMAIL) {
           let emailRaw = '';
@@ -216,17 +244,39 @@ async function parseTallyCustomers(xmlData) {
           }
         }
 
+        // 6️⃣ ✅ EXTRACT CUSTOMER TYPE FROM UDF:PRODUCTCATEGORY AND CONVERT TO LOWERCASE
+        let customerType = 'direct'; // Default value (now lowercase)
+        
+        if (ledger.UDF_PRODUCTCATEGORY_LIST) {
+          console.log('🔍 Found UDF:PRODUCTCATEGORY.LIST structure:', JSON.stringify(ledger.UDF_PRODUCTCATEGORY_LIST, null, 2));
+          
+          // Handle different possible structures
+          if (ledger.UDF_PRODUCTCATEGORY_LIST.UDF_PRODUCTCATEGORY) {
+            let extractedType = '';
+            if (Array.isArray(ledger.UDF_PRODUCTCATEGORY_LIST.UDF_PRODUCTCATEGORY)) {
+              extractedType = String(ledger.UDF_PRODUCTCATEGORY_LIST.UDF_PRODUCTCATEGORY[0]).trim();
+            } else {
+              extractedType = String(ledger.UDF_PRODUCTCATEGORY_LIST.UDF_PRODUCTCATEGORY).trim();
+            }
+            
+            // Convert to lowercase and clean up
+            customerType = extractedType.toLowerCase().trim();
+            console.log(`🎯 Extracted customer type: ${extractedType} → ${customerType}`);
+          }
+        }
 
-        // 6️⃣ Build final customer object
+        // 7️⃣ Build final customer object with lowercase values
         const customer = {
           customer_code: customerCode || null,
           customer_name: customerName,
           email: email,
           mobile_number: mobileNumber,
+          customer_type: customerType,
+          role: customerType, // Same lowercase value as customer_type
           parent_group: parent
         };
 
-        console.log(`📝 Customer: ${customer.customer_name} (Code: ${customer.customer_code || 'N/A'})`);
+        console.log(`📝 Sundry Debtor Customer: ${customer.customer_name} | Type: ${customer.customer_type} | Code: ${customer.customer_code || 'N/A'}`);
         customers.push(customer);
 
       } catch (innerErr) {
@@ -240,7 +290,7 @@ async function parseTallyCustomers(xmlData) {
     saveRawXml(xmlData, 'customers-parse-error');
   }
 
-  console.log(`✅ Parsing completed: ${customers.length} customers found`);
+  console.log(`✅ Parsing completed: ${customers.length} Sundry Debtors customers found`);
   return customers;
 }
 
@@ -628,76 +678,87 @@ async function pullItemsFromTally() {
   return [];
 }
 
-  // ALTERNATIVE PARSING METHOD - DIRECT STRING PARSING
-  async function parseTallyCustomersAlternative(xmlData) {
-    const customers = [];
-    if (!xmlData) return customers;
+// ALTERNATIVE PARSING METHOD - DIRECT STRING PARSING
+async function parseTallyCustomersAlternative(xmlData) {
+  const customers = [];
+  if (!xmlData) return customers;
 
-    try {
-      console.log('🔍 Trying alternative string-based parsing...');
+  try {
+    console.log('🔍 Trying alternative string-based parsing...');
 
-      // Regex to match entire <LEDGER> blocks
-      const ledgerRegex = /<LEDGER[\s\S]*?<\/LEDGER>/g;
-      let match;
+    const ledgerRegex = /<LEDGER[\s\S]*?<\/LEDGER>/g;
+    let match;
 
-      while ((match = ledgerRegex.exec(xmlData)) !== null) {
-        const ledgerXml = match[0];
+    while ((match = ledgerRegex.exec(xmlData)) !== null) {
+      const ledgerXml = match[0];
 
-        // Extract key fields
-        const nameMatches = [...ledgerXml.matchAll(/<NAME>(.*?)<\/NAME>/g)];
-        const parentMatch = ledgerXml.match(/<PARENT>(.*?)<\/PARENT>/);
-        const mobileMatch = ledgerXml.match(/<LEDGERMOBILE>(.*?)<\/LEDGERMOBILE>/);
-        const emailMatch = ledgerXml.match(/<EMAIL>(.*?)<\/EMAIL>/);
+      // Extract key fields
+      const nameMatches = [...ledgerXml.matchAll(/<NAME>(.*?)<\/NAME>/g)];
+      const parentMatch = ledgerXml.match(/<PARENT>(.*?)<\/PARENT>/);
+      const mobileMatch = ledgerXml.match(/<LEDGERMOBILE>(.*?)<\/LEDGERMOBILE>/);
+      const emailMatch = ledgerXml.match(/<EMAIL>(.*?)<\/EMAIL>/);
 
-        if (nameMatches.length === 0) continue;
+      if (nameMatches.length === 0) continue;
 
-        const customerName = nameMatches[0][1]?.trim() || null;
-        const customerCode = nameMatches[1]?.[1]?.trim() || null;
-        const parent = parentMatch ? parentMatch[1].trim() : '';
+      const customerName = nameMatches[0][1]?.trim() || null;
+      const customerCode = nameMatches[1]?.[1]?.trim() || null;
+      const parent = parentMatch ? parentMatch[1].trim() : '';
 
-        // Validate that this is a customer-type ledger
-        const isCustomer =
-          parent.toLowerCase().includes('debtor') ||
-          parent.toLowerCase().includes('sundry') ||
-          parent.toLowerCase().includes('customer');
+      // ONLY ACCEPT "Sundry Debtors" parent group
+      const isSundryDebtor = parent.toLowerCase() === 'sundry debtors';
 
-        if (!isCustomer) continue;
-
-        // Extract mobile number
-        let mobileNumber = null;
-        if (mobileMatch && mobileMatch[1]) {
-          const mobileRaw = mobileMatch[1].trim();
-          const matchNum = mobileRaw.match(/\b\d{10}\b/);
-          if (matchNum) mobileNumber = matchNum[0];
-        }
-
-        // Extract email
-        let email = null;
-        if (emailMatch && emailMatch[1]) {
-          const emailRaw = emailMatch[1].trim();
-          if (emailRaw && emailRaw !== '-') {
-            email = emailRaw;
-          }
-        }
-
-        const customer = {
-          customer_name: customerName,
-          customer_code: customerCode,
-          mobile_number: mobileNumber,
-          email: email,
-          parent_group: parent,
-        };
-
-        console.log(`📝 Customer (alt): ${customer.customer_name}, Code: ${customer.customer_code}`);
-        customers.push(customer);
+      if (!isSundryDebtor) {
+        console.log(`⏭️ Skipping non-Sundry Debtors customer: ${customerName} (Parent: ${parent})`);
+        continue;
       }
 
-    } catch (err) {
-      console.error('❌ Alternative parsing error:', err.message);
+      // Extract mobile number
+      let mobileNumber = null;
+      if (mobileMatch && mobileMatch[1]) {
+        const mobileRaw = mobileMatch[1].trim();
+        mobileNumber = extractMobileNumber(mobileRaw);
+      }
+
+      // Extract email
+      let email = null;
+      if (emailMatch && emailMatch[1]) {
+        const emailRaw = emailMatch[1].trim();
+        if (emailRaw && emailRaw !== '-') {
+          email = emailRaw;
+        }
+      }
+
+      // ✅ EXTRACT CUSTOMER TYPE FROM UDF:PRODUCTCATEGORY AND CONVERT TO LOWERCASE
+      let customerType = 'direct'; // Default value (now lowercase)
+      
+      // Look for UDF:PRODUCTCATEGORY.LIST structure
+      const productCategoryMatch = ledgerXml.match(/<UDF:PRODUCTCATEGORY\.LIST[\s\S]*?<UDF:PRODUCTCATEGORY[^>]*>(.*?)<\/UDF:PRODUCTCATEGORY>/);
+      if (productCategoryMatch && productCategoryMatch[1]) {
+        const extractedType = productCategoryMatch[1].trim();
+        customerType = extractedType.toLowerCase().trim();
+        console.log(`🎯 Extracted customer type (alt): ${extractedType} → ${customerType}`);
+      }
+
+      const customer = {
+        customer_name: customerName,
+        customer_code: customerCode,
+        mobile_number: mobileNumber,
+        email: email,
+        customer_type: customerType,
+        role: customerType, // Same lowercase value as customer_type
+        parent_group: parent,
+      };
+
+      console.log(`📝 Sundry Debtor Customer (alt): ${customer.customer_name} | Type: ${customer.customer_type} | Code: ${customer.customer_code}`);
+      customers.push(customer);
     }
 
-    return customers;
+  } catch (err) {
+    console.error('❌ Alternative parsing error:', err.message);
   }
+
+  return customers;
+}
 
 
 // SIMPLIFIED FUNCTION TO SAVE CUSTOMERS TO MYSQL - SKIP EMPTY CUSTOMER_CODE
@@ -707,7 +768,6 @@ async function saveCustomersToMySQL(customers) {
     return;
   }
 
-  // Filter out customers with empty or null customer_code
   const validCustomers = customers.filter(customer => customer.customer_code && customer.customer_code.trim() !== '');
   
   console.log(`📊 Filtered customers: ${validCustomers.length} valid customers (${customers.length - validCustomers.length} skipped due to empty customer_code)`);
@@ -724,11 +784,11 @@ async function saveCustomersToMySQL(customers) {
   
   for (const customer of validCustomers) {
     try {
-      // SIMPLE INSERT - IGNORE DUPLICATES
+      // ✅ UPDATED INSERT STATEMENT WITH CUSTOMER_TYPE AND ROLE
       const insertSql = `
         INSERT IGNORE INTO customer 
-        (customer_code, customer_name, mobile_number, email, parent_group)
-        VALUES (?, ?, ?, ?, ?)
+        (customer_code, customer_name, mobile_number, email, customer_type, role, parent_group)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
       `;
       
       await new Promise((resolve, reject) => {
@@ -737,6 +797,8 @@ async function saveCustomersToMySQL(customers) {
           customer.customer_name,
           customer.mobile_number,
           customer.email,
+          customer.customer_type, // From UDF:PRODUCTCATEGORY
+          customer.role,          // Same as customer_type
           customer.parent_group || 'Sundry Debtors'
         ], (err, result) => {
           if (err) {
@@ -744,7 +806,7 @@ async function saveCustomersToMySQL(customers) {
             errorCount++;
           } else {
             if (result.affectedRows > 0) {
-              console.log(`✅ Added: ${customer.customer_name} (Code: ${customer.customer_code})`);
+              console.log(`✅ Added: ${customer.customer_name} (Code: ${customer.customer_code}, Type: ${customer.customer_type})`);
               savedCount++;
             } else {
               console.log(`⏭️ Skipped duplicate: ${customer.customer_name} (Code: ${customer.customer_code})`);
@@ -767,7 +829,7 @@ async function saveCustomersToMySQL(customers) {
   if (skippedCustomers.length > 0) {
     console.log(`⏭️ Skipped ${skippedCustomers.length} customers with empty customer_code:`);
     skippedCustomers.forEach(customer => {
-      console.log(`   - ${customer.customer_name}`);
+      console.log(`   - ${customer.customer_name} (Type: ${customer.customer_type})`);
     });
   }
 }
