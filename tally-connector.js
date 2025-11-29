@@ -99,9 +99,7 @@ function extractMobileNumber(mobileRaw) {
   if (!mobileRaw || mobileRaw === '-' || mobileRaw === 'NA' || mobileRaw === 'N/A') {
     return null;
   }
-
   console.log(`🔍 Processing mobile: "${mobileRaw}"`);
-  
   // Extract all digits
   const digitsOnly = mobileRaw.replace(/\D/g, '');
   

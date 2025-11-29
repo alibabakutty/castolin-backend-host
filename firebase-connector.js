@@ -120,7 +120,6 @@ app.get("/api/health/db", (req, res) => {
   });
 });
 
-
 app.get("/me-admin", verifyToken, async (req, res) => {
   
       db.query(
