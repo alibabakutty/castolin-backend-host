@@ -61,10 +61,10 @@ app.use(express.json());
 
 // Database configuration (simplified for now)
 const dbConfig = {
-  host: process.env.MYSQLHOST || "localhost",
+  host: process.env.MYSQLHOST || "mysql-gvmp.railway.internal",
   user: process.env.MYSQLUSER || "root",
-  password: process.env.MYSQLPASSWORD || "",
-  database: process.env.MYSQLDATABASE || "order_management",
+  password: process.env.MYSQLPASSWORD || "cAAiaBeGHjxZVSBFbedADrenyDVkESSu",
+  database: process.env.MYSQLDATABASE || "railway",
   port: process.env.MYSQLPORT || 3306,
   waitForConnections: true,
   connectionLimit: 10,
