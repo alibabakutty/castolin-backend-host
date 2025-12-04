@@ -57,9 +57,6 @@ app.use(cors({
   credentials: true
 }));
 
-// Enable preflight for all routes
-app.options("*", cors());
-
 app.use(express.json());
 
 // Database configuration (simplified for now)
