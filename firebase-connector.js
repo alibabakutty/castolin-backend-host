@@ -39,7 +39,6 @@ if (firebaseBase64) {
     console.error("Failed to decode firebase base64 key:", error);
   }
 }
-
 // CORS configuration
 const allowedOrigins = [
   'https://friendly-heliotrope-401618.netlify.app',
