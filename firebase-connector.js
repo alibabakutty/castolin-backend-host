@@ -40,23 +40,38 @@ if (firebaseBase64) {
   }
 }
 
-// CORS configuration
+// ✅ Fix CORS configuration
 const allowedOrigins = [
   'https://friendly-heliotrope-401618.netlify.app',
+  'https://friendly-heliotrope-401618.netlify.app/', // With trailing slash
   'http://localhost:5173',
-  'http://localhost:3000'
-].filter(Boolean);
+  'http://localhost:3000',
+  'https://castolin-backend-host.vercel.app' // Allow self
+];
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (like mobile apps, curl)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // For debugging, log blocked origins
+      console.log('CORS blocked origin:', origin);
+      callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Length', 'Authorization'],
+  maxAge: 86400 // 24 hours
 }));
+
+// ✅ Handle preflight requests
+app.options('*', cors()); // Enable pre-flight for all routes
 
 app.use(express.json());
 
@@ -82,6 +97,14 @@ db.getConnection((err, connection) => {
     console.log("✅ Connected to MySQL Database");
     connection.release();
   }
+});
+
+// ✅ Root route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Castolin Backend API',
+    endpoints: ['/api/health', '/api/me-admin', '/api/login-admin']
+  });
 });
 
 // Health endpoints
@@ -127,7 +150,7 @@ const verifyToken = async (req, res, next) => {
 };
 
 // API routes
-app.get("/me-admin", verifyToken, (req, res) => {
+app.get("/api/me-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT role FROM admins WHERE firebase_uid = ?",
     [req.uid],
@@ -138,7 +161,7 @@ app.get("/me-admin", verifyToken, (req, res) => {
   );
 });
 
-app.post("/login-admin", verifyToken, (req, res) => {
+app.post("/api/login-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
     [req.uid],
