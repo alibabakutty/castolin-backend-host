@@ -57,6 +57,9 @@ app.use(cors({
   credentials: true
 }));
 
+// Enable preflight for all routes
+app.options("*", cors());
+
 app.use(express.json());
 
 // Database configuration (simplified for now)
@@ -132,6 +135,14 @@ app.get("/me-admin", verifyToken, (req, res) => {
     }
   );
 });
+
+app.get("/customer", (req, res) => {
+  db.query("SELECT * FROM customer", (err, results) => {
+    if (err) return res.status(500).json({ error: err });
+    res.json(results);
+  })
+});
+
 app.post("/login-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
