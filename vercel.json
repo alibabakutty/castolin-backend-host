@@ -1,0 +1,10 @@
+{
+    "version": 2,
+    "builds": [{"src": "firebase-connector.js", "use": "@vercel/node"}],
+    "routes": [
+        {
+            "src": "/(.*)",
+            "dest": "firebase-connector.js"
+        }
+    ]
+}
