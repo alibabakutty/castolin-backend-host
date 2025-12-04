@@ -227,6 +227,21 @@ async function parseTallyCustomers(xmlData) {
           mobileNumber = extractMobileNumber(mobileRaw);
         }
 
+        // 6️⃣ Extract STATE field
+        let state = 'not_applicable'; // Default value
+        if (ledger.STATE) {
+          let stateRaw = '';
+          if (typeof ledger.STATE === 'object' && ledger.STATE._) {
+            stateRaw = String(ledger.STATE._).trim();
+          } else {
+            stateRaw = String(ledger.STATE).trim();
+          }
+
+          if (stateRaw && stateRaw !== '-' && stateRaw.toLowerCase() !== 'na') {
+            state = stateRaw;
+          }
+        }
+
         // 5️⃣ Extract email
         let email = null;
         if (ledger.EMAIL) {
@@ -269,6 +284,7 @@ async function parseTallyCustomers(xmlData) {
           customer_name: customerName,
           email: email,
           mobile_number: mobileNumber,
+          state: state,
           customer_type: customerType,
           role: customerType, // Same lowercase value as customer_type
           parent_group: parent
@@ -717,6 +733,16 @@ async function parseTallyCustomersAlternative(xmlData) {
         mobileNumber = extractMobileNumber(mobileRaw);
       }
 
+      // Extract STATE
+      let state = 'not_applicable';
+      const stateMatch = ledgerXml.match(/<STATE>(.*?)<\/STATE>/);
+      if (stateMatch && stateMatch[1]) {
+        const stateRaw = stateMatch[1].trim();
+        if (stateRaw && stateRaw !== '-' && stateRaw.toLowerCase() !== 'na') {
+          state = stateRaw;
+        }
+      }
+
       // Extract email
       let email = null;
       if (emailMatch && emailMatch[1]) {
@@ -742,6 +768,7 @@ async function parseTallyCustomersAlternative(xmlData) {
         customer_code: customerCode,
         mobile_number: mobileNumber,
         email: email,
+        state: state,
         customer_type: customerType,
         role: customerType, // Same lowercase value as customer_type
         parent_group: parent,
@@ -758,7 +785,7 @@ async function parseTallyCustomersAlternative(xmlData) {
 }
 
 
-// SIMPLIFIED FUNCTION TO SAVE CUSTOMERS TO MYSQL - SKIP EMPTY CUSTOMER_CODE
+// UPDATED FUNCTION TO SAVE CUSTOMERS TO MYSQL - EXPLICIT DEFAULTS
 async function saveCustomersToMySQL(customers) {
   if (customers.length === 0) {
     console.log('ℹ️ No customers to save');
@@ -778,14 +805,16 @@ async function saveCustomersToMySQL(customers) {
   
   let savedCount = 0;
   let errorCount = 0;
+  let duplicateCount = 0;
   
   for (const customer of validCustomers) {
     try {
-      // ✅ UPDATED INSERT STATEMENT WITH CUSTOMER_TYPE AND ROLE
+      // ✅ OPTION 2: EXPLICITLY SET DEFAULTS
       const insertSql = `
         INSERT IGNORE INTO customer 
-        (customer_code, customer_name, mobile_number, email, customer_type, role, parent_group)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (customer_code, customer_name, mobile_number, state, email, 
+         password, customer_type, role, status, parent_group, firebase_uid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       
       await new Promise((resolve, reject) => {
@@ -793,10 +822,14 @@ async function saveCustomersToMySQL(customers) {
           customer.customer_code,
           customer.customer_name,
           customer.mobile_number,
+          customer.state || 'not_applicable',
           customer.email,
-          customer.customer_type, // From UDF:PRODUCTCATEGORY
-          customer.role,          // Same as customer_type
-          customer.parent_group || 'Sundry Debtors'
+          null,                              // password is NULL
+          customer.customer_type,            // From UDF:PRODUCTCATEGORY
+          customer.role,                     // Same as customer_type
+          'inactive',                        // Default status
+          customer.parent_group || 'Sundry Debtors',
+          null                               // firebase_uid is NULL
         ], (err, result) => {
           if (err) {
             console.error(`❌ Error inserting customer ${customer.customer_name}:`, err.message);
@@ -807,6 +840,7 @@ async function saveCustomersToMySQL(customers) {
               savedCount++;
             } else {
               console.log(`⏭️ Skipped duplicate: ${customer.customer_name} (Code: ${customer.customer_code})`);
+              duplicateCount++;
             }
           }
           resolve();
@@ -819,7 +853,7 @@ async function saveCustomersToMySQL(customers) {
     }
   }
   
-  console.log(`✅ MySQL: ${savedCount} new customers added, ${errorCount} errors`);
+  console.log(`✅ MySQL: ${savedCount} new customers added, ${duplicateCount} duplicates skipped, ${errorCount} errors`);
   
   // Log summary of skipped customers
   const skippedCustomers = customers.filter(customer => !customer.customer_code || customer.customer_code.trim() === '');
