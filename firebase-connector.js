@@ -40,38 +40,23 @@ if (firebaseBase64) {
   }
 }
 
-// ✅ Fix CORS configuration
+// CORS configuration
 const allowedOrigins = [
   'https://friendly-heliotrope-401618.netlify.app',
-  'https://friendly-heliotrope-401618.netlify.app/', // With trailing slash
   'http://localhost:5173',
-  'http://localhost:3000',
-  'https://castolin-backend-host.vercel.app' // Allow self
-];
+  'http://localhost:3000'
+].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list
-    if (allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      // For debugging, log blocked origins
-      console.log('CORS blocked origin:', origin);
-      callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+      callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Length', 'Authorization'],
-  maxAge: 86400 // 24 hours
+  credentials: true
 }));
-
-// ✅ Handle preflight requests
-app.options('*', cors()); // Enable pre-flight for all routes
 
 app.use(express.json());
 
