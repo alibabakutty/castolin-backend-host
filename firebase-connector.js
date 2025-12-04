@@ -82,7 +82,6 @@ db.getConnection((err, connection) => {
     connection.release();
   }
 });
-
 // Health endpoints
 app.get("/api/health", (req, res) => {
   res.status(200).json({
@@ -92,7 +91,6 @@ app.get("/api/health", (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
-
 app.get("/api/health/db", (req, res) => {
   db.query('SELECT 1 as test', (err, results) => {
     if (err) {
@@ -109,7 +107,6 @@ app.get("/api/health/db", (req, res) => {
     });
   });
 });
-
 // Firebase token verification middleware
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -124,7 +121,6 @@ const verifyToken = async (req, res, next) => {
     res.status(401).json({ error: "Invalid token" });
   }
 };
-
 // API routes
 app.get("/me-admin", verifyToken, (req, res) => {
   db.query(
@@ -136,7 +132,6 @@ app.get("/me-admin", verifyToken, (req, res) => {
     }
   );
 });
-
 app.post("/login-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
@@ -163,7 +158,6 @@ app.post("/login-admin", verifyToken, (req, res) => {
     }
   );
 });
-
 app.get("/admins/:id", (req, res) => {
   const sql = "SELECT * FROM admins WHERE id = ?";
   db.query(sql, [req.params.id], (err, results) => {
@@ -172,7 +166,6 @@ app.get("/admins/:id", (req, res) => {
     res.json(results[0]);
   });
 });
-
 // ✅ For Vercel: Only listen locally, export app for serverless
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 3000;
@@ -180,6 +173,5 @@ if (process.env.VERCEL !== '1') {
     console.log(`🚀 Local server running on port ${PORT}`);
   });
 }
-
 // ✅ Export for Vercel serverless function
 export default app;
