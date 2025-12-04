@@ -61,7 +61,7 @@ app.use(express.json());
 
 // Database configuration (simplified for now)
 const dbConfig = {
-  host: process.env.MYSQLHOST || "mysql-gvmp.railway.internal",
+  host: process.env.MYSQLHOST || "ballast.proxy.rlwy.net",
   user: process.env.MYSQLUSER || "root",
   password: process.env.MYSQLPASSWORD || "cAAiaBeGHjxZVSBFbedADrenyDVkESSu",
   database: process.env.MYSQLDATABASE || "railway",
@@ -91,6 +91,24 @@ app.get("/api/health", (req, res) => {
     environment: process.env.NODE_ENV || 'development'
   });
 });
+// 📌 Get all customers
+app.get("/customers", (req, res) => {
+  const sql = "SELECT * FROM customer";   // your Railway table name
+
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+
+    res.json({
+      success: true,
+      count: results.length,
+      customers: results
+    });
+  });
+});
+
 app.get("/api/health/db", (req, res) => {
   db.query('SELECT 1 as test', (err, results) => {
     if (err) {
