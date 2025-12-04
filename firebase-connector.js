@@ -2,78 +2,69 @@ import express from "express";
 import mysql from "mysql2";
 import cors from "cors";
 import admin from 'firebase-admin';
-// import serviceAccount from "./config/serviceAccountKey.json" with { type: "json" }; 
 import dotenv from 'dotenv';
 
 const app = express(); 
 dotenv.config();
 
+// ✅ Root route for Vercel (MUST add this)
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Castolin Backend API',
+    status: 'running',
+    endpoints: [
+      '/api/health',
+      '/api/health/db',
+      '/me-admin',
+      '/login-admin'
+    ],
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Firebase initialization
 const firebaseBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
 
-if (!firebaseBase64) {
-  console.error('Missing firebase env variable');
-  process.exit(1);
+if (firebaseBase64) {
+  try {
+    const serviceAccount = JSON.parse(Buffer.from(firebaseBase64, "base64").toString('utf8'));
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+    }
+    console.log("Firebase admin initialized successfully!!");
+  } catch (error) {
+    console.error("Failed to decode firebase base64 key:", error);
+  }
 }
 
-let serviceAccount = null;
+// CORS configuration
+const allowedOrigins = [
+  'https://friendly-heliotrope-401618.netlify.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+].filter(Boolean);
 
-try {
-  serviceAccount = JSON.parse(Buffer.from(firebaseBase64, "base64").toString('utf8'))
-} catch (error) {
-  console.error("Failed to decode firebase base64 key:", error);
-  process.exit(1); 
-}
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
-
-console.log("Firebase admin initialized successfully!!");
-
-// ✅ PROPER CORS CONFIGURATION FOR RAILWAY
-const corsOptions = {
+app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, Postman, server-to-server)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-      'https://castolin-frontend-production.up.railway.app', // Your frontend Railway URL
-      'http://localhost:5173', // Vite dev server
-      'http://localhost:3000', // React dev server
-      process.env.CLIENT_URL, // From environment variable
-    ].filter(Boolean); // Remove any undefined values
-
-    // Check if the origin is in allowed list
-    if (allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
-    'X-Requested-With',
-    'Accept',
-    'Origin',
-    'Access-Control-Request-Method',
-    'Access-Control-Request-Headers'
-  ],
-  optionsSuccessStatus: 200
-};
-// Apply CORS middleware
-app.use(cors(corsOptions));
+  credentials: true
+}));
+
 app.use(express.json());
-// ✅ DATABASE CONFIGURATION FOR RAILWAY
+
+// Database configuration (simplified for now)
 const dbConfig = {
   host: process.env.MYSQLHOST || "localhost",
   user: process.env.MYSQLUSER || "root",
-  password: process.env.MYSQLPASSWORD || "Rup@@.123$",
+  password: process.env.MYSQLPASSWORD || "",
   database: process.env.MYSQLDATABASE || "order_management",
   port: process.env.MYSQLPORT || 3306,
   waitForConnections: true,
@@ -83,20 +74,44 @@ const dbConfig = {
 
 const db = mysql.createPool(dbConfig);
 
-// Test database connection
+// Test database connection (non-blocking)
 db.getConnection((err, connection) => {
   if (err) {
-    console.error("❌ Database connection failed:", err);
+    console.error("❌ Database connection failed:", err.message);
   } else {
     console.log("✅ Connected to MySQL Database");
     connection.release();
   }
 });
 
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-// });
+// Health endpoints
+app.get("/api/health", (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'Backend is running successfully',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
+app.get("/api/health/db", (req, res) => {
+  db.query('SELECT 1 as test', (err, results) => {
+    if (err) {
+      return res.status(500).json({
+        status: 'ERROR',
+        database: 'Connection failed',
+        error: err.message
+      });
+    }
+    res.json({
+      status: 'OK',
+      database: 'Connected successfully',
+      test: results[0].test
+    });
+  });
+});
+
+// Firebase token verification middleware
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "No token provided" });
@@ -111,121 +126,61 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-// ✅ HEALTH CHECK ENDPOINT (IMPORTANT FOR RAILWAY)
-app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    message: 'Backend is running successfully',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    cors: {
-      allowedOrigins: corsOptions.origin.toString()
+// API routes
+app.get("/me-admin", verifyToken, (req, res) => {
+  db.query(
+    "SELECT role FROM admins WHERE firebase_uid = ?",
+    [req.uid],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
     }
-  });
+  );
 });
 
-// ✅ DATABASE HEALTH CHECK
-app.get("/api/health/db", (req, res) => {
-  db.query('SELECT 1 as test', (err, results) => {
-    if (err) {
-      console.error('Database health check failed:', err);
-      return res.status(500).json({
-        status: 'ERROR',
-        database: 'Connection failed',
-        error: err.message
-      });
-    }
-    
-    res.json({
-      status: 'OK',
-      database: 'Connected successfully',
-      test: results[0].test
-    });
-  });
-});
-
-app.get("/me-admin", verifyToken, async (req, res) => {
-  
-      db.query(
-      "SELECT role FROM admins WHERE firebase_uid = ?",
-      [req.uid],
-      (err, rows) => {
-        if (err) return res.status(500).json({errror: err.message})
-        res.json(rows);
-        
-      },);
-});
-
-// Admin login (checks only admins table)
-app.post("/login-admin", verifyToken, async (req, res) => {
-  const firebaseUid = req.uid;
-
-  try {
-    db.query(
-      "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
-      [firebaseUid],
-      (err, rows) => {
-        if (err) {
-          return res.status(500).json({ 
-            success: false,
-            error: "Database error" 
-          });
-        }
-
-        if (rows.length === 0) {
-          return res.status(404).json({ 
-            success: false,
-            error: "Admin not found. Please sign up first." 
-          });
-        }
-
-        const admin = rows[0];
-        res.json({
-          success: true,
-          message: "Admin login successful",
-          user: admin,
-          userType: 'admin'
+app.post("/login-admin", verifyToken, (req, res) => {
+  db.query(
+    "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
+    [req.uid],
+    (err, rows) => {
+      if (err) {
+        return res.status(500).json({ 
+          success: false,
+          error: "Database error" 
         });
       }
-    );
-  } catch (error) {
-    console.error("Admin login error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: "Internal server error" 
-    });
-  }
+      if (rows.length === 0) {
+        return res.status(404).json({ 
+          success: false,
+          error: "Admin not found" 
+        });
+      }
+      res.json({
+        success: true,
+        message: "Admin login successful",
+        user: rows[0],
+        userType: 'admin'
+      });
+    }
+  );
 });
 
-// Get specific admin by id
 app.get("/admins/:id", (req, res) => {
-  const userId = req.params.id;
-
-  if (!userId) {
-    return res.status(400).json({ error: "Admin ID is required" });
-  }
-
   const sql = "SELECT * FROM admins WHERE id = ?";
-
-  db.query(sql, [userId], (err, results) => {
-    if (err) {
-      console.error("Database query error:", err);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-
-    if (results.length === 0) {
-      return res.status(400).json({ error: "Admin not found" });
-    }
-
+  db.query(sql, [req.params.id], (err, results) => {
+    if (err) return res.status(500).json({ error: "Internal server error" });
+    if (results.length === 0) return res.status(404).json({ error: "Admin not found" });
     res.json(results[0]);
-  })
+  });
 });
 
-// ✅ USE PORT FROM ENVIRONMENT VARIABLE (RAILWAY PROVIDES THIS)
-const PORT = process.env.PORT || 5000;
+// ✅ For Vercel: Only listen locally, export app for serverless
+if (process.env.VERCEL !== '1') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Local server running on port ${PORT}`);
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`🚀 Backend running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-});
+// ✅ Export for Vercel serverless function
+export default app;
