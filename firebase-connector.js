@@ -99,14 +99,6 @@ db.getConnection((err, connection) => {
   }
 });
 
-// ✅ Root route
-app.get('/', (req, res) => {
-  res.json({
-    message: 'Castolin Backend API',
-    endpoints: ['/api/health', '/api/me-admin', '/api/login-admin']
-  });
-});
-
 // Health endpoints
 app.get("/api/health", (req, res) => {
   res.status(200).json({
@@ -150,7 +142,7 @@ const verifyToken = async (req, res, next) => {
 };
 
 // API routes
-app.get("/api/me-admin", verifyToken, (req, res) => {
+app.get("/me-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT role FROM admins WHERE firebase_uid = ?",
     [req.uid],
@@ -161,7 +153,7 @@ app.get("/api/me-admin", verifyToken, (req, res) => {
   );
 });
 
-app.post("/api/login-admin", verifyToken, (req, res) => {
+app.post("/login-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
     [req.uid],
