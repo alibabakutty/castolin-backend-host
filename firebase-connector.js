@@ -2,9 +2,35 @@ import express from "express";
 import mysql from "mysql2";
 import cors from "cors";
 import admin from 'firebase-admin';
-import serviceAccount from "./config/serviceAccountKey.json" with { type: "json" }; 
+// import serviceAccount from "./config/serviceAccountKey.json" with { type: "json" }; 
+import dotenv from 'dotenv';
 
 const app = express(); 
+dotenv.config();
+
+const firebaseBase64 = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+
+if (!firebaseBase64) {
+  console.error('Missing firebase env variable');
+  process.exit(1);
+}
+
+let serviceAccount = null;
+
+try {
+  serviceAccount = JSON.parse(Buffer.from(firebaseBase64, "base64").toString('utf8'))
+} catch (error) {
+  console.error("Failed to decode firebase base64 key:", error);
+  process.exit(1); 
+}
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+}
+
+console.log("Firebase admin initialized successfully!!");
 
 // ✅ PROPER CORS CONFIGURATION FOR RAILWAY
 const corsOptions = {
@@ -67,9 +93,9 @@ db.getConnection((err, connection) => {
   }
 });
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount),
+// });
 
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
