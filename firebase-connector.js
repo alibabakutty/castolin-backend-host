@@ -665,7 +665,9 @@ app.get('/api/tally/test', async (req, res) => {
         'Content-Type': 'application/xml',
         'Accept': 'application/xml'
       },
-      timeout: 10000
+      timeout: 30000,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity
     });
     
     const isSuccessful = response.status === 200 && response.data;
