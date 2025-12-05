@@ -15,10 +15,12 @@ if (!admin.apps.length) {
 
 // MySQL Connection
 const mysqlDb = mysql.createConnection({
-  host: "localhost",
+  host: "ballast.proxy.rlwy.net",
   user: "root",
-  password: "Rup@@.123$",
-  database: "order_management",
+  password: "cAAiaBeGHjxZVSBFbedADrenyDVkESSu",
+  database: "railway",
+  waitForConnections: true,
+  connectionLimit: 10,
 });
 
 mysqlDb.connect((err) => {
@@ -949,22 +951,19 @@ async function saveItemsToMySQL(items) {
 
 // Main execution
 async function main() {
-  console.log('🚀 Starting Tally to MySQL sync for XML Demo Data...');
+  console.log('🚀 Starting Tally to MySQL sync...');
 
   try {
-    // Pull customers
     const customers = await pullCustomersFromTally();
     console.log(`📊 Final result: ${customers.length} customers processed`);
 
-    // Pull items
     const items = await pullItemsFromTally();
     console.log(`📦 Final result: ${items.length} items processed`);
 
   } catch (error) {
-    console.error('❌ Sync failed:', error.message);
+    console.error('❌ Sync failed:', error);
   }
 
-  mysqlDb.end();
   console.log('✅ Process completed');
 }
 
