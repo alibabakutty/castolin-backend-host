@@ -674,7 +674,6 @@ app.post("/api/tally/sync/customers", verifyAdmin, async (req, res) => {
     });
   }
 });
-
 // Sync items from Tally
 app.post("/api/tally/sync/items", verifyAdmin, async (req, res) => {
   try {
@@ -692,7 +691,6 @@ app.post("/api/tally/sync/items", verifyAdmin, async (req, res) => {
         error: 'Empty response from Tally' 
       });
     }
-    
     const items = await parseTallyItems(response.data);
     const saveResult = await saveItemsToMySQL(items);
     
@@ -725,7 +723,6 @@ app.post("/api/tally/sync/items", verifyAdmin, async (req, res) => {
     });
   }
 });
-
 // Manual sync both customers and items
 app.post("/api/tally/sync/all", verifyAdmin, async (req, res) => {
   try {
