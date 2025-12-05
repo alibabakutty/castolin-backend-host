@@ -806,7 +806,6 @@ app.get("/api/tally/sync/status", verifyToken, async (req, res) => {
     });
   }
 });
-
 // ==================== SERVER STARTUP ====================
 
 // ✅ For Vercel: Only listen locally, export app for serverless
@@ -818,6 +817,5 @@ if (process.env.VERCEL !== '1') {
     console.log(`🏢 Tally Company: ${TALLY_CONFIG.COMPANY_NAME}`);
   });
 }
-
 // ✅ Export for Vercel serverless function
 export default app;
