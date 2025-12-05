@@ -168,6 +168,26 @@ app.get("/me-admin", verifyToken, (req, res) => {
     }
   );
 });
+app.get("/me-corporate", verifyToken, (req, res) => {
+  db.query(
+    "SELECT * FROM customer WHERE firebase_uid = ?",
+    [req, uid],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    }
+  )
+});
+app.get("/me-distributor", verifyToken, (req, res) => {
+  db.query(
+    "SELECT * FROM customer WHERE firebase_uid = ?",
+    [req, uid],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    }
+  )
+})
 app.post("/login-admin", verifyToken, (req, res) => {
   db.query(
     "SELECT id, username, mobile_number, email, role, firebase_uid FROM admins WHERE firebase_uid = ?",
